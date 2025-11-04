@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>宫子婷我爱你！</title>
+  <style>
+    :root {
+      --popup-w: 260px;
+      --popup-h: 130px;
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: radial-gradient(1000px 600px at 20% 10%, #fff0f5, #ffe4ec 60%, #ffd7e8);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans SC', 'PingFang SC', 'Microsoft Yahei', 'Hiragino Sans GB', sans-serif;
+      overflow: hidden;
+    }
+
+    .popup {
+      position: fixed;
+      width: var(--popup-w);
+      height: var(--popup-h);
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.15);
+      overflow: hidden;
+      user-select: none;
+      animation: popIn 180ms ease-out;
+      z-index: 100;
+    }
+    @keyframes popIn { 
+      from { transform: scale(0.8); opacity: 0 } 
+      to { transform: scale(1); opacity: 1 } 
+    }
+
+    .popup-header {
+      height: 38px; 
+      display:flex; 
+      align-items:center; 
+      justify-content:space-between;
+      padding: 0 10px 0 12px; 
+      background: linear-gradient(90deg, #ff9ec6, #ffaacb);
+      color: #7a0f3d; 
+      font-weight: 700;
+      cursor: move;
+    }
+    .title {
+      display:flex; 
+      align-items:center; 
+      gap:8px; 
+      font-size: 14px;
+    }
+    .traffic {
+      display:flex; 
+      gap:6px; 
+      margin-right: 6px;
+    }
+    .dot { 
+      width: 10px; 
+      height: 10px; 
+      border-radius: 50%; 
+      background: #ff5f56; 
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12) 
+    }
+    .dot.yellow { background: #ffbd2e }
+    .dot.green  { background: #27c93f }
+
+    .close {
+      background: transparent; 
+      border: none; 
+      color: #7a0f3d; 
+      font-size: 18px; 
+      line-height: 1; 
+      cursor: pointer; 
+      padding: 0 6px;
+    }
+
+    .popup-body { 
+      height: calc(var(--popup-h) - 38px); 
+      display:grid; 
+      place-items:center; 
+      text-align:center; 
+      padding: 12px 
+    }
+    .popup-body h2 { 
+      margin: 0; 
+      font-size: 20px; 
+      color: #c51358 
+    }
+    .popup-body p  { 
+      margin: 6px 0 0; 
+      font-size: 13px; 
+      color: #a04; 
+      opacity: .85 
+    }
+  </style>
+</head>
+<body>
+  <script>
+    const msg = '宫子婷我爱你！';
+    let activePopups = 0;
+    let maxActivePopups = 50; // 限制同时显示的弹窗数量，避免性能问题
+
+    function rand(min, max){ return Math.random() * (max - min) + min; }
+
+    function makePopup(text){
+      // 如果当前活跃弹窗太多，移除最旧的一个
+      if (activePopups >= maxActivePopups) {
+        const oldestPopup = document.querySelector('.popup');
+        if (oldestPopup) {
+          oldestPopup.remove();
+          activePopups--;
+        }
+      }
+      
+      const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--popup-w'));
+      const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--popup-h'));
+      const el = document.createElement('div');
+      el.className = 'popup';
+
+      const margin = 12;
+      const maxX = Math.max(0, window.innerWidth  - w - margin);
+      const maxY = Math.max(0, window.innerHeight - h - margin);
+      el.style.left = rand(margin, maxX) + 'px';
+      el.style.top  = rand(margin, maxY) + 'px';
+
+      el.innerHTML = `
+        <div class="popup-header">
+          <div class="title">
+            <div class="traffic"><span class="dot"></span><span class="dot yellow"></span><span class="dot green"></span></div>
+            <span>Love Note</span>
+          </div>
+          <button class="close" title="关闭">×</button>
+        </div>
+        <div class="popup-body">
+          <div>
+            <h2>${text}</h2>
+            <p>— 来自你的专属网页 💗</p>
+          </div>
+        </div>
+      `;
+
+      el.querySelector('.close').addEventListener('click', () => {
+        el.remove();
+        activePopups--;
+      });
+
+      const header = el.querySelector('.popup-header');
+      let dragging = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
+      header.addEventListener('mousedown', (e) => {
+        dragging = true;
+        el.style.transition = 'none';
+        startX = e.clientX; 
+        startY = e.clientY;
+        baseX = el.offsetLeft; 
+        baseY = el.offsetTop;
+        el.style.zIndex = String(Date.now());
+      });
+      window.addEventListener('mousemove', (e) => {
+        if(!dragging) return;
+        const x = baseX + (e.clientX - startX);
+        const y = baseY + (e.clientY - startY);
+        el.style.left = Math.max(0, Math.min(x, window.innerWidth - w)) + 'px';
+        el.style.top = Math.max(0, Math.min(y, window.innerHeight - h)) + 'px';
+      });
+      window.addEventListener('mouseup', () => dragging = false);
+
+      document.body.appendChild(el);
+      activePopups++;
+      return el;
+    }
+
+    // 持续弹出弹窗 - 无限循环
+    function continuousPopup() {
+      // 随机间隔时间，50-300毫秒
+      const interval = rand(50, 300);
+      
+      setTimeout(() => {
+        makePopup(msg);
+        continuousPopup(); // 递归调用，持续弹出
+      }, interval);
+    }
+
+    // 页面加载后开始
+    window.addEventListener('DOMContentLoaded', () => {
+      // 初始快速弹出一些弹窗
+      for(let i = 0; i < 10; i++) {
+        setTimeout(() => makePopup(msg), i * 100);
+      }
+      
+      // 开始持续弹出 - 无限循环
+      setTimeout(continuousPopup, 800);
+    });
+  </script>
+</body>
+</html>
