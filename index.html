@@ -1,527 +1,171 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>MERRY CHRISTMAS | 粒子圣诞</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摄像头控制示例</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #0a0518; font-family: 'Arial', sans-serif; }
-        /* 圣诞雪花背景 */
-        .snow-bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
-        /* 主文案 */
-        .christmas-text { position: fixed; top: 20px; left: 0; width: 100%; text-align: center; z-index: 10; }
-        .christmas-text h1 { color: #ff0033; font-size: 2.5rem; letter-spacing: 0.2em; text-shadow: 0 0 10px #ffd700; margin-bottom: 8px; }
-        .christmas-text p { color: #ffd700; font-size: 1rem; opacity: 0.8; }
-        /* 视频层 */
-        video { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100vw; height: 100vh; object-fit: cover; z-index: 0; opacity: 0.2; }
-        /* 控制按钮 */
-        .control-btns { position: fixed; bottom: 40px; left: 0; width: 100%; display: flex; justify-content: center; gap: 20px; z-index: 10; }
-        .btn { padding: 12px 24px; border: none; border-radius: 30px; background: linear-gradient(45deg, #ff0033, #ff6688); color: #fff; font-size: 1rem; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(255,0,51,0.4); transition: all 0.3s; }
-        .btn:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(255,0,51,0.6); }
-        .btn:active { transform: translateY(1px); }
-        /* 摄像头权限提示 */
-        .permission-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10,5,24,0.9); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #fff; padding: 20px; }
-        .permission-modal p { font-size: 1.2rem; margin-bottom: 30px; text-align: center; line-height: 1.6; }
-        .permission-modal .btn-group { display: flex; gap: 20px; }
-        .btn-cancel { background: #666; }
-        .btn-confirm { background: linear-gradient(45deg, #ffd700, #ffaa00); }
-        /* Three.js渲染层 */
-        canvas { position: fixed; top: 0; left: 0; z-index: 5; }
-        /* 响应式调整 */
-        @media (max-width: 768px) {
-            .christmas-text h1 { font-size: 1.8rem; letter-spacing: 0.1em; }
-            .control-btns { flex-wrap: wrap; padding: 0 20px; }
-            .btn { padding: 10px 20px; font-size: 0.9rem; }
+        /* 1. 全局样式重置 */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 2. 顶部标题栏样式 */
+        header {
+            background-color: #ffffff;
+            height: 60px;
+            display: flex;
+            justify-content: space-between; /* 两端对齐：标题在左，按钮在右 */
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 18px;
+            color: #333;
+            margin: 0;
+        }
+
+        /* 3. 开关按钮样式 */
+        #cameraToggle {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+            background-color: #007bff;
+            color: white;
+        }
+
+        #cameraToggle.active {
+            background-color: #dc3545; /*开启状态变为红色*/
+        }
+
+        #cameraToggle:hover {
+            opacity: 0.9;
+        }
+
+        /* 4. 右下角摄像头样式 */
+        .video-container {
+            position: fixed; /* 固定定位 */
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            background-color: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 保持比例填满容器 */
+            transform: scaleX(-1); /* 镜像翻转，更符合自拍习惯 */
+            display: none; /* 默认隐藏，开启后显示 */
+        }
+
+        /* 当视频显示时，显示这个类 */
+        video.show {
+            display: block;
+        }
+        
+        /* 提示文字样式 */
+        .placeholder {
+            position: absolute;
+            color: white;
         }
     </style>
-    <!-- 引入依赖（unpkg稳定源） -->
-    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-    <script src="https://unpkg.com/@mediapipe/hands@0.4.1646424915/hands.min.js"></script>
-    <script src="https://unpkg.com/@mediapipe/camera_utils@0.3.1646425229/camera_utils.js"></script>
 </head>
 <body>
-    <!-- 雪花背景 -->
-    <div class="snow-bg" id="snowBg"></div>
-    <!-- 圣诞文案 -->
-    <div class="christmas-text">
-        <h1>MERRY CHRISTMAS</h1>
-        <p>Every particle a wish, every light a memory</p>
+
+    <header>
+        <h1>摄像头控制中心</h1>
+        <button id="cameraToggle">开启摄像头</button>
+    </header>
+
+    <div style="padding: 20px; color: #666;">
+        <p>页面其他内容...</p>
     </div>
-    <!-- 视频层 -->
-    <video id="video" autoplay playsinline></video>
-    <!-- 控制按钮 -->
-    <div class="control-btns">
-        <button class="btn" id="btnGather">粒子聚合</button>
-        <button class="btn" id="btnExplode">粒子散开</button>
-        <label class="btn" style="cursor: pointer;">
-            选取照片
-            <input type="file" id="photoInput" accept="image/*" style="display: none;">
-        </label>
-    </div>
-    <!-- 摄像头权限提示 -->
-    <div class="permission-modal" id="permissionModal">
-        <p>手势操控需调用摄像头<br>仅用于实时交互，不会存储任何数据</p>
-        <div class="btn-group">
-            <button class="btn btn-cancel" id="btnCancelCam">取消</button>
-            <button class="btn btn-confirm" id="btnOpenCam">开启</button>
-        </div>
+
+    <div class="video-container">
+        <span class="placeholder">摄像头已关闭</span>
+        <video id="webcam" autoplay playsinline muted></video>
     </div>
 
     <script>
-        // ========== 核心配置（圣诞主题定制） ==========
-        const CONFIG = {
-            particleCount: 16000,
-            particleColors: [0xff0033, 0xffd700, 0xffffff], // 圣诞红+金+白
-            particleSize: 2.2,
-            damping: 0.93,
-            explosionPower: 7,
-            gatherPower: 0.05,
-            handSpeedThreshold: 0.9,
-            scaleRange: [0.6, 2.8]
-        };
+        const videoElement = document.getElementById('webcam');
+        const toggleButton = document.getElementById('cameraToggle');
+        const placeholder = document.querySelector('.placeholder');
+        let stream = null;
 
-        // ========== 全局状态 ==========
-        let scene, camera, renderer, particles;
-        let handDetector, handLandmarks = null;
-        let currentGesture = "none", lastGesture = "none";
-        let handSpeed = 0, handScale = 1;
-        let particleData = { positions: [], velocities: [], accelerations: [], targets: [] };
-        let isPhotoMode = false, photoTargetData = [];
-
-        // ========== 初始化雪花背景 ==========
-        function initSnow() {
-            const snowBg = document.getElementById('snowBg');
-            for (let i = 0; i < 100; i++) {
-                const snowflake = document.createElement('div');
-                snowflake.style.position = 'absolute';
-                snowflake.style.width = `${Math.random() * 4 + 1}px`;
-                snowflake.style.height = `${Math.random() * 4 + 1}px`;
-                snowflake.style.backgroundColor = '#fff';
-                snowflake.style.borderRadius = '50%';
-                snowflake.style.left = `${Math.random() * 100}vw`;
-                snowflake.style.top = `${Math.random() * -100}px`;
-                snowflake.style.opacity = Math.random() * 0.7 + 0.3;
-                snowflake.style.animation = `snowfall ${Math.random() * 10 + 10}s linear infinite`;
-                snowBg.appendChild(snowflake);
+        toggleButton.addEventListener('click', async () => {
+            if (stream) {
+                // 如果流存在，说明摄像头是开启的，执行关闭逻辑
+                stopCamera();
+            } else {
+                // 否则，执行开启逻辑
+                await startCamera();
             }
-
-            // 雪花飘落动画
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes snowfall {
-                    0% { transform: translateY(0) rotate(0deg); }
-                    100% { transform: translateY(100vh) rotate(360deg); }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        // ========== 初始化Three.js场景 ==========
-        function initThree() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0518);
-
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 55;
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.body.appendChild(renderer.domElement);
-
-            // 圣诞氛围光
-            const ambientLight = new THREE.AmbientLight(0xffd700, 0.6);
-            const pointLight = new THREE.PointLight(0xff0033, 0.8, 100);
-            pointLight.position.set(0, 10, 30);
-            scene.add(ambientLight, pointLight);
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-        }
-
-        // ========== 圣诞粒子初始化（三色混合） ==========
-        function initParticles() {
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(CONFIG.particleCount * 3);
-            const velocities = new Float32Array(CONFIG.particleCount * 3);
-            const accelerations = new Float32Array(CONFIG.particleCount * 3);
-            const colors = new Float32Array(CONFIG.particleCount * 3);
-
-            // 初始化粒子位置+速度+颜色
-            for (let i = 0; i < CONFIG.particleCount; i++) {
-                const idx = i * 3;
-                // 随机位置
-                positions[idx] = (Math.random() - 0.5) * 50;
-                positions[idx + 1] = (Math.random() - 0.5) * 50;
-                positions[idx + 2] = (Math.random() - 0.5) * 50;
-                // 零速度零加速度
-                velocities[idx] = velocities[idx + 1] = velocities[idx + 2] = 0;
-                accelerations[idx] = accelerations[idx + 1] = accelerations[idx + 2] = 0;
-                // 随机圣诞配色
-                const color = new THREE.Color(CONFIG.particleColors[Math.floor(Math.random() * CONFIG.particleColors.length)]);
-                colors[idx] = color.r;
-                colors[idx + 1] = color.g;
-                colors[idx + 2] = color.b;
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
-            geometry.setAttribute('acceleration', new THREE.BufferAttribute(accelerations, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-            // 粒子材质（圣诞质感）
-            const material = new THREE.PointsMaterial({
-                size: CONFIG.particleSize,
-                transparent: true,
-                opacity: 0.9,
-                sizeAttenuation: true,
-                depthWrite: false,
-                vertexColors: true // 启用顶点颜色（三色混合）
-            });
-
-            particles = new THREE.Points(geometry, material);
-            scene.add(particles);
-            particleData.positions = geometry.attributes.position;
-            particleData.velocities = geometry.attributes.velocity;
-            particleData.accelerations = geometry.attributes.acceleration;
-        }
-
-        // ========== MediaPipe手势检测 ==========
-        function initHandDetector() {
-            handDetector = new window.mediapipe.hands.Hands({
-                locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1646424915/${file}`
-            });
-            handDetector.setOptions({
-                maxNumHands: 1,
-                modelComplexity: 1,
-                minDetectionConfidence: 0.7,
-                minTrackingConfidence: 0.7
-            });
-            handDetector.onResults(onHandResults);
-        }
-
-        // ========== 手势结果处理 ==========
-        let lastHandPos = null;
-        function onHandResults(results) {
-            handLandmarks = results.multiHandLandmarks?.[0];
-            if (!handLandmarks) return;
-
-            // 计算手速（圣诞魔法风暴）
-            const palmPos = handLandmarks[0];
-            const currentPos = new THREE.Vector3(palmPos.x, palmPos.y, palmPos.z);
-            if (lastHandPos) {
-                handSpeed = currentPos.distanceTo(lastHandPos) * 120;
-            }
-            lastHandPos = currentPos.clone();
-
-            // 深度推拉（手掌占比）
-            const minX = Math.min(...handLandmarks.map(l => l.x));
-            const maxX = Math.max(...handLandmarks.map(l => l.x));
-            const minY = Math.min(...handLandmarks.map(l => l.y));
-            const maxY = Math.max(...handLandmarks.map(l => l.y));
-            const palmArea = (maxX - minX) * (maxY - minY);
-            handScale = THREE.MathUtils.mapLinear(palmArea, 0.03, 0.16, CONFIG.scaleRange[0], CONFIG.scaleRange[1]);
-            handScale = THREE.MathUtils.clamp(handScale, ...CONFIG.scaleRange);
-
-            // 手势判定
-            judgeGesture();
-        }
-
-        // ========== 圣诞五态手势判定 ==========
-        function judgeGesture() {
-            const lm = handLandmarks;
-            const tipIds = [4, 8, 12, 16, 20];
-            const mcpIds = [2, 5, 9, 13, 17];
-
-            const isFingerStraight = (tipIdx, mcpIdx) => {
-                const tip = lm[tipIdx], mcp = lm[mcpIdx];
-                return Math.abs(tip.y - mcp.y) > 0.05;
-            };
-
-            // 1. 张手 → 圣诞树
-            const allStraight = tipIds.every((t, i) => isFingerStraight(t, mcpIds[i]));
-            if (allStraight) { currentGesture = "christmasTree"; return; }
-
-            // 2. 剪刀手 → 圣诞袜
-            const twoStraight = isFingerStraight(8,5) && isFingerStraight(12,9);
-            const threeBend = !isFingerStraight(4,2) && !isFingerStraight(16,13) && !isFingerStraight(20,17);
-            if (twoStraight && threeBend) { currentGesture = "sock"; return; }
-
-            // 3. 握拳 → 铃铛
-            const allBend = tipIds.every((t, i) => !isFingerStraight(t, mcpIds[i]));
-            if (allBend) { currentGesture = "bell"; return; }
-
-            // 4. 食指 → 雪花
-            const onlyIndex = isFingerStraight(8,5) && !isFingerStraight(4,2) && !isFingerStraight(12,9) && !isFingerStraight(16,13) && !isFingerStraight(20,17);
-            if (onlyIndex) { currentGesture = "snowflake"; return; }
-
-            // 5. 竖大拇指 → 圣诞帽
-            const onlyThumb = isFingerStraight(4,2) && !isFingerStraight(8,5) && !isFingerStraight(12,9) && !isFingerStraight(16,13) && !isFingerStraight(20,17);
-            if (onlyThumb) { currentGesture = "christmasHat"; return; }
-        }
-
-        // ========== 圣诞目标形态生成 ==========
-        function generateTargetShape(shape) {
-            const targets = new Float32Array(CONFIG.particleCount * 3);
-            switch(shape) {
-                // 圣诞树
-                case "christmasTree":
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const h=Math.random()*30;
-                        const r=(30-h)*0.6*Math.random();
-                        const theta=Math.random()*Math.PI*2;
-                        targets[idx]=r*Math.cos(theta);
-                        targets[idx+1]=-h+15;
-                        targets[idx+2]=(Math.random()-0.5)*5;
-                    }
-                    break;
-                // 圣诞袜
-                case "sock":
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const t=Math.random()*Math.PI;
-                        const x=5*Math.sin(t);
-                        const y=15*t/Math.PI -10;
-                        const z=(Math.random()-0.5)*3;
-                        targets[idx]=x + (Math.random()-0.5)*2;
-                        targets[idx+1]=y;
-                        targets[idx+2]=z;
-                    }
-                    break;
-                // 铃铛
-                case "bell":
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const r=12 + (Math.random()-0.5)*3;
-                        const theta=Math.random()*Math.PI*2;
-                        const z=(Math.random()-0.5)*8;
-                        targets[idx]=r*Math.cos(theta);
-                        targets[idx+1]=r*Math.sin(theta)*0.7;
-                        targets[idx+2]=z;
-                    }
-                    break;
-                // 雪花
-                case "snowflake":
-                    const snowPoints=[];
-                    for(let i=0;i<6;i++){
-                        const a1=(i*60)*Math.PI/180;
-                        const a2=((i*60)+30)*Math.PI/180;
-                        snowPoints.push([15*Math.cos(a1),15*Math.sin(a1),0]);
-                        snowPoints.push([8*Math.cos(a2),8*Math.sin(a2),0]);
-                    }
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const p=snowPoints[i%snowPoints.length];
-                        targets[idx]=p[0]+(Math.random()-0.5)*4;
-                        targets[idx+1]=p[1]+(Math.random()-0.5)*4;
-                        targets[idx+2]=(Math.random()-0.5)*3;
-                    }
-                    break;
-                // 圣诞帽
-                case "christmasHat":
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const t=Math.random()*Math.PI;
-                        const r=8*Math.sin(t);
-                        const y=12*Math.cos(t) -8;
-                        targets[idx]=r*Math.cos(Math.random()*Math.PI*2);
-                        targets[idx+1]=y;
-                        targets[idx+2]=(Math.random()-0.5)*4;
-                    }
-                    break;
-            }
-            particleData.targets = targets;
-        }
-
-        // ========== 粒子聚合/散开控制 ==========
-        function gatherParticles() {
-            for(let i=0;i<CONFIG.particleCount;i++){
-                const idx=i*3;
-                const dx = -particleData.positions[idx] * CONFIG.gatherPower;
-                const dy = -particleData.positions[idx+1] * CONFIG.gatherPower;
-                const dz = -particleData.positions[idx+2] * CONFIG.gatherPower;
-                particleData.accelerations[idx] += dx;
-                particleData.accelerations[idx+1] += dy;
-                particleData.accelerations[idx+2] += dz;
-            }
-        }
-
-        function explodeParticles() {
-            for(let i=0;i<CONFIG.particleCount;i++){
-                const idx=i*3;
-                particleData.accelerations[idx] = (Math.random()-0.5)*CONFIG.explosionPower;
-                particleData.accelerations[idx+1] = (Math.random()-0.5)*CONFIG.explosionPower;
-                particleData.accelerations[idx+2] = (Math.random()-0.5)*CONFIG.explosionPower;
-            }
-        }
-
-        // ========== 照片处理（粒子贴合照片） ==========
-        function handlePhotoUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 300;
-                    canvas.height = 300;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, 300, 300);
-                    const imgData = ctx.getImageData(0,0,300,300).data;
-
-                    // 提取照片亮部像素作为粒子目标
-                    photoTargetData = [];
-                    for(let y=0;y<300;y++){
-                        for(let x=0;x<300;x++){
-                            const pixelIdx=(y*300+x)*4;
-                            const brightness = (imgData[pixelIdx] + imgData[pixelIdx+1] + imgData[pixelIdx+2])/3;
-                            if(brightness>120){
-                                photoTargetData.push([
-                                    (x/300-0.5)*40,
-                                    -(y/300-0.5)*40,
-                                    (Math.random()-0.5)*5
-                                ]);
-                            }
-                        }
-                    }
-
-                    // 切换照片模式
-                    isPhotoMode = true;
-                    const targets = new Float32Array(CONFIG.particleCount * 3);
-                    for(let i=0;i<CONFIG.particleCount;i++){
-                        const idx=i*3;
-                        const p = photoTargetData[i % photoTargetData.length] || [(Math.random()-0.5)*40, (Math.random()-0.5)*40, 0];
-                        targets[idx] = p[0];
-                        targets[idx+1] = p[1];
-                        targets[idx+2] = p[2];
-                    }
-                    particleData.targets = targets;
-                    explodeParticles(); // 爆炸过渡到照片形态
-                };
-                img.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // ========== 粒子物理更新 ==========
-        function updateParticlePhysics() {
-            const pos = particleData.positions;
-            const vel = particleData.velocities;
-            const acc = particleData.accelerations;
-            const targets = particleData.targets;
-
-            for(let i=0;i<CONFIG.particleCount;i++){
-                const idx=i*3;
-                // 物理核心：速度=速度+加速度，位置=位置+速度
-                vel[idx] += acc[idx];
-                vel[idx+1] += acc[idx+1];
-                vel[idx+2] += acc[idx+2];
-                pos[idx] += vel[idx];
-                pos[idx+1] += vel[idx+1];
-                pos[idx+2] += vel[idx+2];
-
-                // 阻尼衰减
-                vel[idx] *= CONFIG.damping;
-                vel[idx+1] *= CONFIG.damping;
-                vel[idx+2] *= CONFIG.damping;
-                acc[idx] *= 0.1;
-                acc[idx+1] *= 0.1;
-                acc[idx+2] *= 0.1;
-
-                // 目标吸引（手势/照片）
-                if(targets.length>0){
-                    const tx=targets[idx], ty=targets[idx+1], tz=targets[idx+2];
-                    const dx=tx-pos[idx], dy=ty-pos[idx+1], dz=tz-pos[idx+2];
-                    acc[idx] += dx*0.03;
-                    acc[idx+1] += dy*0.03;
-                    acc[idx+2] += dz*0.03;
-                }
-
-                // 圣诞魔法风暴（挥手吹散）
-                if(handSpeed>CONFIG.handSpeedThreshold){
-                    const dirX=(Math.random()-0.5)*handSpeed;
-                    const dirY=(Math.random()-0.5)*handSpeed;
-                    const dirZ=(Math.random()-0.5)*handSpeed;
-                    acc[idx] += dirX*0.4;
-                    acc[idx+1] += dirY*0.4;
-                    acc[idx+2] += dirZ*0.4;
-                }
-            }
-
-            pos.needsUpdate = true;
-            vel.needsUpdate = true;
-            acc.needsUpdate = true;
-        }
-
-        // ========== 主循环 ==========
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // 深度推拉缩放
-            if(particles) particles.scale.lerp(new THREE.Vector3(handScale,handScale,handScale), 0.1);
-
-            // 手势切换处理
-            if(!isPhotoMode && currentGesture!==lastGesture && currentGesture!=="none"){
-                explodeParticles();
-                generateTargetShape(currentGesture);
-                lastGesture = currentGesture;
-            }
-
-            // 粒子物理更新
-            updateParticlePhysics();
-
-            renderer.render(scene, camera);
-        }
-
-        // ========== 事件绑定 ==========
-        function bindEvents() {
-            // 摄像头权限
-            document.getElementById('btnOpenCam').addEventListener('click', () => {
-                document.getElementById('permissionModal').style.display = 'none';
-                // 启动摄像头
-                const camera = new window.mediapipe.camera_utils.Camera(document.getElementById('video'), {
-                    onFrame: async () => await handDetector.send({ image: document.getElementById('video') }),
-                    width: window.innerWidth,
-                    height: window.innerHeight
-                });
-                camera.start();
-            });
-
-            document.getElementById('btnCancelCam').addEventListener('click', () => {
-                document.getElementById('permissionModal').style.display = 'none';
-            });
-
-            // 控制按钮
-            document.getElementById('btnGather').addEventListener('click', () => {
-                isPhotoMode = false;
-                gatherParticles();
-            });
-
-            document.getElementById('btnExplode').addEventListener('click', () => {
-                isPhotoMode = false;
-                explodeParticles();
-            });
-
-            // 照片上传
-            document.getElementById('photoInput').addEventListener('change', handlePhotoUpload);
-        }
-
-        // ========== 初始化启动 ==========
-        window.addEventListener('load', () => {
-            initSnow();
-            initThree();
-            initParticles();
-            initHandDetector();
-            bindEvents();
-            animate();
         });
+
+        async function startCamera() {
+            try {
+                // 请求摄像头权限
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }, 
+                    audio: false 
+                });
+                
+                // 将流赋值给 video 标签
+                videoElement.srcObject = stream;
+                videoElement.classList.add('show');
+                placeholder.style.display = 'none'; // 隐藏占位文字
+                
+                // 更新按钮状态
+                toggleButton.textContent = '关闭摄像头';
+                toggleButton.classList.add('active');
+
+            } catch (err) {
+                console.error("无法获取摄像头:", err);
+                alert("无法访问摄像头，请检查权限设置或当前是否为 HTTPS 环境。");
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                // 停止所有轨道（彻底释放硬件）
+                stream.getTracks().forEach(track => track.stop());
+                
+                // 重置状态
+                videoElement.srcObject = null;
+                stream = null;
+                
+                // UI 恢复
+                videoElement.classList.remove('show');
+                placeholder.style.display = 'block';
+                toggleButton.textContent = '开启摄像头';
+                toggleButton.classList.remove('active');
+            }
+        }
     </script>
 </body>
 </html>
