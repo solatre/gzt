@@ -1,198 +1,442 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>宫子婷我爱你！</title>
-  <style>
-    :root {
-      --popup-w: 260px;
-      --popup-h: 130px;
-    }
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: radial-gradient(1000px 600px at 20% 10%, #fff0f5, #ffe4ec 60%, #ffd7e8);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans SC', 'PingFang SC', 'Microsoft Yahei', 'Hiragino Sans GB', sans-serif;
-      overflow: hidden;
-    }
-
-    .popup {
-      position: fixed;
-      width: var(--popup-w);
-      height: var(--popup-h);
-      background: #fff;
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 16px;
-      box-shadow: 0 18px 45px rgba(0,0,0,0.15);
-      overflow: hidden;
-      user-select: none;
-      animation: popIn 180ms ease-out;
-      z-index: 100;
-    }
-    @keyframes popIn { 
-      from { transform: scale(0.8); opacity: 0 } 
-      to { transform: scale(1); opacity: 1 } 
-    }
-
-    .popup-header {
-      height: 38px; 
-      display:flex; 
-      align-items:center; 
-      justify-content:space-between;
-      padding: 0 10px 0 12px; 
-      background: linear-gradient(90deg, #ff9ec6, #ffaacb);
-      color: #7a0f3d; 
-      font-weight: 700;
-      cursor: move;
-    }
-    .title {
-      display:flex; 
-      align-items:center; 
-      gap:8px; 
-      font-size: 14px;
-    }
-    .traffic {
-      display:flex; 
-      gap:6px; 
-      margin-right: 6px;
-    }
-    .dot { 
-      width: 10px; 
-      height: 10px; 
-      border-radius: 50%; 
-      background: #ff5f56; 
-      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12) 
-    }
-    .dot.yellow { background: #ffbd2e }
-    .dot.green  { background: #27c93f }
-
-    .close {
-      background: transparent; 
-      border: none; 
-      color: #7a0f3d; 
-      font-size: 18px; 
-      line-height: 1; 
-      cursor: pointer; 
-      padding: 0 6px;
-    }
-
-    .popup-body { 
-      height: calc(var(--popup-h) - 38px); 
-      display:grid; 
-      place-items:center; 
-      text-align:center; 
-      padding: 12px 
-    }
-    .popup-body h2 { 
-      margin: 0; 
-      font-size: 20px; 
-      color: #c51358 
-    }
-    .popup-body p  { 
-      margin: 6px 0 0; 
-      font-size: 13px; 
-      color: #a04; 
-      opacity: .85 
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>WebAR Mok 粒子系统</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #video-input { position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; transform: scaleX(-1); border-radius: 8px; opacity: 0.5; z-index: 2; pointer-events: none; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #0ff; font-size: 24px; z-index: 10; text-shadow: 0 0 10px #0ff; }
+        #status { position: absolute; bottom: 20px; left: 20px; color: rgba(255,255,255,0.7); font-size: 14px; z-index: 5; pointer-events: none; }
+        .hidden { display: none !important; }
+    </style>
 </head>
 <body>
-  <script>
-    const msg = '宫子婷我爱你！';
-    let activePopups = 0;
-    let maxActivePopups = 50; // 限制同时显示的弹窗数量，避免性能问题
 
-    function rand(min, max){ return Math.random() * (max - min) + min; }
+    <div id="loading">正在初始化神经连接 / Loading AI & Physics...</div>
+    <div id="status">等待摄像头授权...</div>
+    <video id="video-input" playsinline></video>
+    <div id="canvas-container"></div>
 
-    function makePopup(text){
-      // 如果当前活跃弹窗太多，移除最旧的一个
-      if (activePopups >= maxActivePopups) {
-        const oldestPopup = document.querySelector('.popup');
-        if (oldestPopup) {
-          oldestPopup.remove();
-          activePopups--;
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://unpkg.com/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://unpkg.com/@mediapipe/hands/hands.js"></script>
+
+    <script>
+        // --- 配置 ---
+        const PARTICLE_COUNT = 16000;
+        const PARTICLE_COLOR = 0x00ffff;
+        const PARTICLE_SIZE = 0.15;
+        const DAMPING = 0.94; // 阻尼系数 (0-1)，越低空气阻力越大
+        const STIFFNESS = 0.04; // 弹簧劲度，越高反应越快但越抖动
+        const EXPLOSION_FORCE = 0.5; // 切换形状时的爆炸力度
+        const WIND_MULTIPLIER = 0.08; // 挥手风力系数
+
+        // --- 全局变量 ---
+        let scene, camera, renderer, particleSystem;
+        let positions, targets, velocities; // 物理属性数组
+        let currentShape = 'sphere'; // 当前形状
+        let handLandmarks = null;
+        let prevHandPos = new THREE.Vector3(); // 用于计算手速
+        let handSpeed = 0;
+        let isHandPresent = false;
+        
+        // 形状生成器缓存
+        const shapes = {
+            sphere: [],
+            torus: [],
+            star: [],
+            heart: [],
+            text: []
+        };
+
+        // --- 初始化 Three.js ---
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            // 添加一点微弱的雾气增加深邃感
+            scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 30;
+
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 性能优化
+            container.appendChild(renderer.domElement);
+
+            createParticles();
+            
+            // 响应窗口大小变化
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
         }
-      }
-      
-      const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--popup-w'));
-      const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--popup-h'));
-      const el = document.createElement('div');
-      el.className = 'popup';
 
-      const margin = 12;
-      const maxX = Math.max(0, window.innerWidth  - w - margin);
-      const maxY = Math.max(0, window.innerHeight - h - margin);
-      el.style.left = rand(margin, maxX) + 'px';
-      el.style.top  = rand(margin, maxY) + 'px';
+        // --- 粒子系统构建 ---
+        function createParticles() {
+            const geometry = new THREE.BufferGeometry();
+            
+            // 数据数组 (Float32Array 性能最好)
+            positions = new Float32Array(PARTICLE_COUNT * 3);
+            targets = new Float32Array(PARTICLE_COUNT * 3);
+            velocities = new Float32Array(PARTICLE_COUNT * 3);
 
-      el.innerHTML = `
-        <div class="popup-header">
-          <div class="title">
-            <div class="traffic"><span class="dot"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-            <span>Love Note</span>
-          </div>
-          <button class="close" title="关闭">×</button>
-        </div>
-        <div class="popup-body">
-          <div>
-            <h2>${text}</h2>
-            <p>— 来自你的专属网页 💗</p>
-          </div>
-        </div>
-      `;
+            // 初始化位置（随机分布）
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                positions[i] = (Math.random() - 0.5) * 50;
+                velocities[i] = 0;
+                targets[i] = 0;
+            }
 
-      el.querySelector('.close').addEventListener('click', () => {
-        el.remove();
-        activePopups--;
-      });
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: PARTICLE_COLOR,
+                size: PARTICLE_SIZE,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
 
-      const header = el.querySelector('.popup-header');
-      let dragging = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
-      header.addEventListener('mousedown', (e) => {
-        dragging = true;
-        el.style.transition = 'none';
-        startX = e.clientX; 
-        startY = e.clientY;
-        baseX = el.offsetLeft; 
-        baseY = el.offsetTop;
-        el.style.zIndex = String(Date.now());
-      });
-      window.addEventListener('mousemove', (e) => {
-        if(!dragging) return;
-        const x = baseX + (e.clientX - startX);
-        const y = baseY + (e.clientY - startY);
-        el.style.left = Math.max(0, Math.min(x, window.innerWidth - w)) + 'px';
-        el.style.top = Math.max(0, Math.min(y, window.innerHeight - h)) + 'px';
-      });
-      window.addEventListener('mouseup', () => dragging = false);
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
 
-      document.body.appendChild(el);
-      activePopups++;
-      return el;
-    }
+            // 预计算所有形状
+            generateShapes();
+            setShape('sphere'); // 默认形状
+        }
 
-    // 持续弹出弹窗 - 无限循环
-    function continuousPopup() {
-      // 随机间隔时间，50-300毫秒
-      const interval = rand(50, 300);
-      
-      setTimeout(() => {
-        makePopup(msg);
-        continuousPopup(); // 递归调用，持续弹出
-      }, interval);
-    }
+        // --- 形状生成算法 ---
+        function generateShapes() {
+            // 1. 球体 (Open Palm)
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos((Math.random() * 2) - 1);
+                const r = 10;
+                shapes.sphere.push(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                );
+            }
 
-    // 页面加载后开始
-    window.addEventListener('DOMContentLoaded', () => {
-      // 初始快速弹出一些弹窗
-      for(let i = 0; i < 10; i++) {
-        setTimeout(() => makePopup(msg), i * 100);
-      }
-      
-      // 开始持续弹出 - 无限循环
-      setTimeout(continuousPopup, 800);
-    });
-  </script>
+            // 2. 圆环/甜甜圈 (Fist)
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const u = Math.random() * Math.PI * 2;
+                const v = Math.random() * Math.PI * 2;
+                const R = 8; // 大半径
+                const r = 2.5; // 管径
+                shapes.torus.push(
+                    (R + r * Math.cos(v)) * Math.cos(u),
+                    (R + r * Math.cos(v)) * Math.sin(u),
+                    r * Math.sin(v)
+                );
+            }
+
+            // 3. 星星 (Index Finger) - 参数化方程
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // 简单的随机点分布在星形体积内，或者用简单的五角星算法
+                // 这里使用多个圆锥体拼凑或简单的数学近似
+                const angle = Math.random() * Math.PI * 2;
+                const rBase = Math.random() * 10;
+                // 简单的五角星极坐标逻辑
+                const a = Math.atan2(Math.sin(angle), Math.cos(angle)) * 5;
+                const rStar = 6 + 4 * Math.cos(a); 
+                const z = (Math.random() - 0.5) * 2;
+                
+                shapes.star.push(
+                    rStar * Math.cos(angle) * (1 - Math.abs(z)/5) * 1.5,
+                    rStar * Math.sin(angle) * (1 - Math.abs(z)/5) * 1.5,
+                    z * 2
+                );
+            }
+
+            // 4. 爱心 (Thumbs Up)
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Heart shape parametric equation
+                let t = Math.random() * Math.PI * 2;
+                // 更加饱满的爱心
+                let x = 16 * Math.pow(Math.sin(t), 3);
+                let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                let z = (Math.random() - 0.5) * 4;
+                
+                // 归一化大小
+                x *= 0.6;
+                y *= 0.6;
+                
+                shapes.heart.push(x, y, z);
+            }
+
+            // 5. 文字 "我是 Mok" (Victory/Scissors) - Canvas 采样
+            generateTextParticles("我是 Mok");
+        }
+
+        function generateTextParticles(text) {
+            const canvas = document.createElement('canvas');
+            const size = 512;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, size, size);
+            
+            ctx.font = 'bold 80px "Microsoft YaHei", sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, size/2, size/2);
+
+            const imageData = ctx.getImageData(0, 0, size, size);
+            const data = imageData.data;
+            const validPoints = [];
+
+            // 扫描像素
+            for (let y = 0; y < size; y += 2) {
+                for (let x = 0; x < size; x += 2) {
+                    const index = (y * size + x) * 4;
+                    if (data[index] > 128) { // 亮度阈值
+                        validPoints.push({
+                            x: (x / size - 0.5) * 25, // 缩放到世界坐标
+                            y: -(y / size - 0.5) * 25, // 翻转Y轴
+                            z: 0
+                        });
+                    }
+                }
+            }
+
+            // 填充 shapes.text
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // 如果采样点不够，随机取；如果多了，按顺序取
+                const p = validPoints[i % validPoints.length];
+                // 稍微加一点Z轴厚度
+                const zOffset = (Math.random() - 0.5) * 2; 
+                shapes.text.push(p.x, p.y, p.z + zOffset);
+            }
+        }
+
+        // --- 物理与形状切换逻辑 ---
+        function setShape(shapeName) {
+            if (currentShape === shapeName) return;
+            
+            currentShape = shapeName;
+            const targetData = shapes[shapeName];
+
+            // 更新目标位置
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                targets[i] = targetData[i];
+            }
+
+            // 爆炸特效：给所有粒子一个随机向外的初速度
+            explode();
+            
+            document.getElementById('status').innerText = `当前状态: ${shapeName.toUpperCase()}`;
+        }
+
+        function explode() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                const dirX = (Math.random() - 0.5);
+                const dirY = (Math.random() - 0.5);
+                const dirZ = (Math.random() - 0.5);
+                
+                velocities[idx] += dirX * EXPLOSION_FORCE * 10;
+                velocities[idx+1] += dirY * EXPLOSION_FORCE * 10;
+                velocities[idx+2] += dirZ * EXPLOSION_FORCE * 10;
+            }
+        }
+
+        // --- 物理更新循环 ---
+        function updatePhysics() {
+            const posAttr = particleSystem.geometry.attributes.position;
+            
+            // 手部交互：计算风力
+            let windX = 0, windY = 0, windZ = 0;
+            if (isHandPresent && handSpeed > 0.02) {
+                // 将屏幕2D速度映射到3D风力
+                windX = (prevHandPos.x - (handLandmarks[9].x * 2 - 1) * -15) * -1 * WIND_MULTIPLIER;
+                windY = (prevHandPos.y - (handLandmarks[9].y * -1 + 0.5) * 15) * -1 * WIND_MULTIPLIER;
+                // Z轴稍微模拟一点
+                windZ = (Math.random()-0.5) * Math.abs(windX + windY) * 0.5;
+            }
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                
+                // 1. 计算弹簧力 (Hooke's Law): Force = (Target - Current) * Stiffness
+                const ax = (targets[idx] - positions[idx]) * STIFFNESS;
+                const ay = (targets[idx+1] - positions[idx+1]) * STIFFNESS;
+                const az = (targets[idx+2] - positions[idx+2]) * STIFFNESS;
+
+                // 2. 更新速度 (Acceleration -> Velocity)
+                velocities[idx] += ax;
+                velocities[idx+1] += ay;
+                velocities[idx+2] += az;
+
+                // 3. 应用交互风力 (如果有) - 距离衰减
+                if (windX !== 0) {
+                    // 简单距离判断，离中心越近受影响越大
+                    // 这里为了性能简化，直接全场施加但加点随机扰动
+                    if (Math.random() > 0.5) {
+                         velocities[idx] += windX * 5 + (Math.random()-0.5);
+                         velocities[idx+1] += windY * 5 + (Math.random()-0.5);
+                         velocities[idx+2] += windZ * 5;
+                    }
+                }
+
+                // 4. 应用阻尼 (Friction/Drag)
+                velocities[idx] *= DAMPING;
+                velocities[idx+1] *= DAMPING;
+                velocities[idx+2] *= DAMPING;
+
+                // 5. 更新位置 (Velocity -> Position)
+                positions[idx] += velocities[idx];
+                positions[idx+1] += velocities[idx+1];
+                positions[idx+2] += velocities[idx+2];
+            }
+
+            posAttr.needsUpdate = true;
+        }
+
+        // --- MediaPipe 手势识别逻辑 ---
+        function initMediaPipe() {
+            const videoElement = document.getElementById('video-input');
+            
+            const hands = new Hands({locateFile: (file) => {
+                return `https://unpkg.com/@mediapipe/hands/${file}`;
+            }});
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+
+            hands.onResults(onHandsResults);
+
+            const cameraUtils = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                },
+                width: 640,
+                height: 480
+            });
+            cameraUtils.start()
+                .then(() => document.getElementById('loading').classList.add('hidden'))
+                .catch(err => {
+                    document.getElementById('status').innerText = "摄像头启动失败: " + err;
+                });
+        }
+
+        function onHandsResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                isHandPresent = true;
+                const landmarks = results.multiHandLandmarks[0];
+                handLandmarks = landmarks;
+
+                // 1. 深度推拉 (Z-Depth Interaction)
+                // 计算手掌在屏幕的近似大小 (腕部到中指根部的距离)
+                const wrist = landmarks[0];
+                const middleBase = landmarks[9];
+                const handSize = Math.sqrt(
+                    Math.pow(wrist.x - middleBase.x, 2) + 
+                    Math.pow(wrist.y - middleBase.y, 2)
+                );
+                // 映射 handSize (约 0.1 到 0.4) 到 粒子系统缩放 (0.5 到 2.0)
+                const targetScale = 0.5 + (handSize / 0.3) * 1.5;
+                // 平滑缩放
+                particleSystem.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
+
+                // 2. 速度计算 (用于风暴)
+                // 转换到 3D 世界的大致坐标范围
+                const currentPos = new THREE.Vector3(
+                    (middleBase.x * 2 - 1) * -15, 
+                    (middleBase.y * -1 + 0.5) * 15, 
+                    0
+                );
+                
+                if (prevHandPos) {
+                    handSpeed = currentPos.distanceTo(prevHandPos);
+                }
+                prevHandPos.copy(currentPos);
+
+                // 3. 手势识别状态机
+                detectGesture(landmarks);
+
+            } else {
+                isHandPresent = false;
+                // 手消失时缓慢恢复默认缩放
+                particleSystem.scale.lerp(new THREE.Vector3(1, 1, 1), 0.05);
+            }
+        }
+
+        function detectGesture(landmarks) {
+            // 简单的手指状态判断
+            // 0: Wrist, 4: Thumb Tip, 8: Index Tip, 12: Middle Tip, 16: Ring Tip, 20: Pinky Tip
+            // 关节: 3, 4 (Thumb); 6, 8 (Index); 10, 12 (Middle); 14, 16 (Ring); 18, 20 (Pinky)
+            
+            const isFingerOpen = (tipIdx, pipIdx) => {
+                // 简单的Y轴判断 (注意 MediaPipe y轴向下是正)
+                // 更严谨的需要向量计算，但在WebAR快速演示中，比较距离手掌心的距离更有效
+                const wrist = landmarks[0];
+                const tip = landmarks[tipIdx];
+                const pip = landmarks[pipIdx];
+                return Math.hypot(tip.x-wrist.x, tip.y-wrist.y) > Math.hypot(pip.x-wrist.x, pip.y-wrist.y);
+            };
+
+            const thumbOpen = isFingerOpen(4, 2); // 拇指比较特殊，比较MCP
+            const indexOpen = isFingerOpen(8, 6);
+            const middleOpen = isFingerOpen(12, 10);
+            const ringOpen = isFingerOpen(16, 14);
+            const pinkyOpen = isFingerOpen(20, 18);
+
+            let detected = null;
+
+            // 逻辑判断
+            if (thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) {
+                detected = 'sphere'; // 张开手掌 -> 球
+            } else if (!thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+                detected = 'torus'; // 握拳 -> 圆环
+            } else if (indexOpen && middleOpen && !ringOpen && !pinkyOpen) {
+                detected = 'text'; // 剪刀手 (Victory) -> 文字
+            } else if (indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+                detected = 'star'; // 食指 -> 星星
+            } else if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+                detected = 'heart'; // 竖大拇指 -> 爱心
+            }
+
+            if (detected) {
+                setShape(detected);
+            }
+        }
+
+        // --- 主循环 ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            updatePhysics();
+            
+            // 缓慢旋转整体，增加动感
+            particleSystem.rotation.y += 0.002;
+            particleSystem.rotation.z += 0.001;
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 启动 ---
+        initThree();
+        initMediaPipe();
+        animate();
+
+    </script>
 </body>
 </html>
